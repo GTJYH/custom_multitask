@@ -6,10 +6,41 @@ import numpy as np
 # 定义所有自定义任务
 TASK_NAMES = ['pro_saccade', 'anti_saccade', 'delay_pro', 'delay_anti']
 
+# 统一定义任务时间片
+TASK_TIMES = {
+    # 非延迟任务（pro_saccade, anti_saccade）
+    'non_delay': {
+        'task_signal_dur': 500,  # 任务信号持续时间（ms）
+        'stim_dur': 500,         # 点刺激持续时间（ms）
+        'response_dur': 500      # 反应持续时间（ms）
+    },
+    # 延迟任务（delay_pro, delay_anti）
+    'delay': {
+        'task_signal_dur': 500,  # 任务信号持续时间（ms）
+        'response_dur': 500      # 反应持续时间（ms）
+        # 延迟持续时间是随机的（1000-2000ms），不在这里定义
+    }
+}
+
 
 def get_dist(original_dist):
     """获取周期性边界条件下的距离."""
     return np.minimum(np.abs(original_dist), 2*np.pi - np.abs(original_dist))
+
+
+def get_task_times(task_type):
+    """根据任务类型获取对应的时间片配置
+    
+    Args:
+        task_type: str, 任务类型名称
+        
+    Returns:
+        dict: 对应的时间片配置
+    """
+    if task_type in ['delay_pro', 'delay_anti']:
+        return TASK_TIMES['delay']
+    else:
+        return TASK_TIMES['non_delay']
 
 
 def _direction_to_angle(direction):
@@ -200,17 +231,15 @@ class Trial(object):
                 # 基于任务类型的精细控制
                 if task_type in ['delay_pro', 'delay_anti']:
                     # Delay任务的精细控制
+                    task_times = get_task_times(task_type)
+                    task_signal_end = int(task_times['task_signal_dur']/self.dt)
+                    
                     # 任务信号期（0-500ms）：权重1.0
-                    task_signal_end = int(500/self.dt)
                     c_mask[pre_on:task_signal_end, i, :] = 1.0
                     
-                    # 刺激期（500-600ms）：权重1.0
-                    stimulus_start = task_signal_end
-                    stimulus_end = int(600/self.dt)
-                    c_mask[stimulus_start:stimulus_end, i, :] = 1.0
-                    
-                    # 延迟期（600ms到反应开始）：权重3.0（关键改进）
-                    delay_start = stimulus_end
+                    # 延迟期（500ms到反应开始）：权重3.0（关键改进）
+                    # 这个阶段任务信号和点刺激同时存在
+                    delay_start = task_signal_end
                     delay_end = pre_offs[i]
                     if delay_end > delay_start:
                         c_mask[delay_start:delay_end, i, :] = 3.0
@@ -240,14 +269,15 @@ class Trial(object):
                 # 基于任务类型的精细控制
                 if task_type in ['delay_pro', 'delay_anti']:
                     # Delay任务的精细控制
-                    task_signal_end = int(500/self.dt)
+                    task_times = get_task_times(task_type)
+                    task_signal_end = int(task_times['task_signal_dur']/self.dt)
+                    
+                    # 任务信号期（0-500ms）：权重1.0
                     c_mask[pre_on:task_signal_end, i] = 1.0
                     
-                    stimulus_start = task_signal_end
-                    stimulus_end = int(600/self.dt)
-                    c_mask[stimulus_start:stimulus_end, i] = 1.0
-                    
-                    delay_start = stimulus_end
+                    # 延迟期（500ms到反应开始）：权重3.0（关键改进）
+                    # 这个阶段任务信号和点刺激同时存在
+                    delay_start = task_signal_end
                     delay_end = pre_offs[i]
                     if delay_end > delay_start:
                         c_mask[delay_start:delay_end, i] = 3.0
@@ -303,10 +333,13 @@ def pro_saccade(config, mode, **kwargs):
     
     Args:
         config: 配置字典
-        mode: 'random', 'test', 或 'psychometric'
+        mode: 'random' 或 'psychometric'
     """
     dt = config['dt']
     rng = config['rng']
+    
+    # 获取任务时间片配置
+    task_times = get_task_times('pro_saccade')
     
     if mode == 'random':
         batch_size = kwargs['batch_size']
@@ -315,11 +348,12 @@ def pro_saccade(config, mode, **kwargs):
         point_locs = rng.choice([0, np.pi], batch_size)
         
         # 时间安排
-        task_signal_dur = int(500/dt)  # 500ms任务信号
+        task_signal_dur = int(task_times['task_signal_dur']/dt)
         task_signal_off = task_signal_dur
-        point_dur = int(500/dt)  # 500ms点刺激
-        go_cue_on = task_signal_off + point_dur
-        tdim = go_cue_on + int(500/dt)  # 额外的500ms用于反应
+        stim_dur = int(task_times['stim_dur']/dt)
+        go_cue_on = task_signal_off + stim_dur
+        response_dur = int(task_times['response_dur']/dt)
+        tdim = go_cue_on + response_dur
         
     elif mode == 'psychometric':
         p = kwargs['params']
@@ -334,11 +368,12 @@ def pro_saccade(config, mode, **kwargs):
         point_locs = _direction_to_angle(p['directions'])
         error_types = np.asarray(p['error_types']).astype(int)
 
-        task_signal_dur = int(500/dt)
+        task_signal_dur = int(task_times['task_signal_dur']/dt)
         task_signal_off = task_signal_dur
-        point_dur = int(500/dt)
-        go_cue_on = task_signal_off + point_dur
-        tdim = go_cue_on + int(500/dt)
+        stim_dur = int(task_times['stim_dur']/dt)
+        go_cue_on = task_signal_off + stim_dur
+        response_dur = int(task_times['response_dur']/dt)
+        tdim = go_cue_on + response_dur
 
         batch_size = len(point_locs)
     else:
@@ -403,17 +438,18 @@ def anti_saccade(config, mode, **kwargs):
     
     Args:
         config: 配置字典
-        mode: 'random', 'test', 或 'psychometric'
+        mode: 'random' 或 'psychometric'
         kwargs: 其他参数
             - batch_size: 批次大小 (mode='random'时需要)
-            - point_locs: 点位置 (mode='test'时可选)
-            - tdim: 总时间步数 (mode='test'时可选)
     
     Returns:
         Trial实例
     """
     dt = config['dt']
     rng = config['rng']
+    
+    # 获取任务时间片配置
+    task_times = get_task_times('anti_saccade')
     
     if mode == 'random':
         batch_size = kwargs['batch_size']
@@ -422,11 +458,12 @@ def anti_saccade(config, mode, **kwargs):
         point_locs = rng.choice([0, np.pi], batch_size)
         
         # 时间安排
-        task_signal_dur = int(500/dt)  # 500ms任务信号
+        task_signal_dur = int(task_times['task_signal_dur']/dt)
         task_signal_off = task_signal_dur
-        point_dur = int(500/dt)  # 500ms点刺激
-        go_cue_on = task_signal_off + point_dur
-        tdim = go_cue_on + int(500/dt)  # 额外的500ms用于反应
+        stim_dur = int(task_times['stim_dur']/dt)
+        go_cue_on = task_signal_off + stim_dur
+        response_dur = int(task_times['response_dur']/dt)
+        tdim = go_cue_on + response_dur
         
     elif mode == 'psychometric':
         p = kwargs['params']
@@ -440,11 +477,12 @@ def anti_saccade(config, mode, **kwargs):
         point_locs = _direction_to_angle(p['directions'])
         error_types = np.asarray(p['error_types']).astype(int)
 
-        task_signal_dur = int(500/dt)
+        task_signal_dur = int(task_times['task_signal_dur']/dt)
         task_signal_off = task_signal_dur
-        point_dur = int(500/dt)
-        go_cue_on = task_signal_off + point_dur
-        tdim = go_cue_on + int(500/dt)
+        stim_dur = int(task_times['stim_dur']/dt)
+        go_cue_on = task_signal_off + stim_dur
+        response_dur = int(task_times['response_dur']/dt)
+        tdim = go_cue_on + response_dur
 
         batch_size = len(point_locs)
     else:
@@ -495,17 +533,19 @@ def delay_pro(config, mode, **kwargs):
     """
     Delay pro-saccade任务.
     
-    第一阶段：注视中心出现任务信号（500ms）
-    第二阶段：任务信号消失，出现点刺激（100ms）
-    第三阶段：延迟期（1000-2000ms）
-    第四阶段：根据任务信号和记忆中的点位置执行眼跳
+    第一阶段：任务信号呈现期（0-500ms）
+    第二阶段：任务信号+点刺激同时存在（500ms-延迟结束）
+    第三阶段：只有点刺激，开始扫视（延迟结束-试验结束）
     
     Args:
         config: 配置字典
-        mode: 'random', 'test', 或 'psychometric'
+        mode: 'random' 或 'psychometric'
     """
     dt = config['dt']
     rng = config['rng']
+    
+    # 获取任务时间片配置
+    task_times = get_task_times('delay_pro')
     
     if mode == 'random':
         batch_size = kwargs['batch_size']
@@ -514,13 +554,11 @@ def delay_pro(config, mode, **kwargs):
         point_locs = rng.choice([0, np.pi], batch_size)
         
         # 时间安排
-        task_signal_dur = int(500/dt)  # 500ms任务信号
-        task_signal_off = task_signal_dur
-        point_dur = int(100/dt)  # 100ms点刺激
-        point_off = task_signal_off + point_dur
+        task_signal_dur = int(task_times['task_signal_dur']/dt)
+        delay_on = task_signal_dur  # 延迟开始时间点
         delay_dur = int(rng.choice([1000, 1500, 2000])/dt)  # 可变延迟
-        go_cue_on = point_off + delay_dur
-        tdim = go_cue_on + int(500/dt)  # 额外的500ms用于反应
+        go_cue_on = delay_on + delay_dur  # 任务信号消失，开始扫视
+        tdim = go_cue_on + int(task_times['response_dur']/dt)
         
     elif mode == 'psychometric':
         p = kwargs['params']
@@ -534,13 +572,11 @@ def delay_pro(config, mode, **kwargs):
         point_locs = _direction_to_angle(p['directions'])
         error_types = np.asarray(p['error_types']).astype(int)
 
-        task_signal_dur = int(500/dt)
-        task_signal_off = task_signal_dur
-        point_dur = int(100/dt)
-        point_off = task_signal_off + point_dur
+        task_signal_dur = int(task_times['task_signal_dur']/dt)
+        delay_on = task_signal_dur
         delay_dur = int(1500/dt)
-        go_cue_on = point_off + delay_dur
-        tdim = go_cue_on + int(500/dt)
+        go_cue_on = delay_on + delay_dur
+        tdim = go_cue_on + int(task_times['response_dur']/dt)
 
         batch_size = len(point_locs)
     else:
@@ -556,15 +592,15 @@ def delay_pro(config, mode, **kwargs):
     
     trial = Trial(config, tdim, batch_size)
     
-    # 第一阶段：任务信号（one-hot编码在位置35）
-    trial.add('fix_in', offs=tdim)  # 注视输入直到试验结束
+    # 第一阶段：任务信号（one-hot编码在位置2）
+    trial.add('fix_in', offs=go_cue_on)  # 注视输入直到延迟结束
     trial.add_task_signal(2, on=0, off=go_cue_on)  # Delay Pro-saccade任务信号持续到反应开始
     
-    # 第二阶段：点刺激
-    trial.add('stim', point_locs, ons=task_signal_off, offs=tdim)  # 点刺激持续到试验结束
+    # 第二阶段：点刺激（从delay_on开始）
+    trial.add('stim', point_locs, ons=delay_on, offs=tdim)  # 点刺激从延迟开始持续到试验结束
     
     # 输出
-    trial.add('fix_out', offs=tdim)  # 注视输出直到试验结束
+    trial.add('fix_out', offs=go_cue_on)  # 注视输出直到延迟结束
     if mode == 'psychometric':
         trial.add('out', np.nan_to_num(response_locs, nan=0.0), ons=go_cue_on)
         unknown_mask = np.isin(error_types, [2, 3, 4])
@@ -579,9 +615,8 @@ def delay_pro(config, mode, **kwargs):
     trial.add_c_mask(pre_offs=go_cue_on, post_ons=check_ons, task_type='delay_pro')
     
     trial.epochs = {
-        'task_signal': (None, task_signal_off),
-        'stimulus': (task_signal_off, point_off),
-        'delay': (point_off, go_cue_on),
+        'task_signal': (None, delay_on),
+        'delay': (delay_on, go_cue_on),
         'response': (go_cue_on, None)
     }
     
@@ -592,17 +627,19 @@ def delay_anti(config, mode, **kwargs):
     """
     Delay anti-saccade任务.
     
-    第一阶段：注视中心出现任务信号（500ms）
-    第二阶段：任务信号消失，出现点刺激（100ms）
-    第三阶段：延迟期（1000-2000ms）
-    第四阶段：根据任务信号和记忆中的点位置执行眼跳（反方向）
+    第一阶段：任务信号呈现期（0-500ms）
+    第二阶段：任务信号+点刺激同时存在（500ms-延迟结束）
+    第三阶段：只有点刺激，开始扫视（延迟结束-试验结束）
     
     Args:
         config: 配置字典
-        mode: 'random', 'test', 或 'psychometric'
+        mode: 'random' 或 'psychometric'
     """
     dt = config['dt']
     rng = config['rng']
+    
+    # 获取任务时间片配置
+    task_times = get_task_times('delay_anti')
     
     if mode == 'random':
         batch_size = kwargs['batch_size']
@@ -611,17 +648,15 @@ def delay_anti(config, mode, **kwargs):
         point_locs = rng.choice([0, np.pi], batch_size)
         
         # 时间安排
-        task_signal_dur = int(500/dt)  # 500ms任务信号
-        task_signal_off = task_signal_dur
-        point_dur = int(100/dt)  # 100ms点刺激
-        point_off = task_signal_off + point_dur
+        task_signal_dur = int(task_times['task_signal_dur']/dt)
+        delay_on = task_signal_dur  # 延迟开始时间点
         delay_dur = int(rng.choice([1000, 1500, 2000])/dt)  # 可变延迟
-        go_cue_on = point_off + delay_dur
-        tdim = go_cue_on + int(500/dt)  # 额外的500ms用于反应
+        go_cue_on = delay_on + delay_dur  # 任务信号消失，开始扫视
+        tdim = go_cue_on + int(task_times['response_dur']/dt)
         
     elif mode == 'psychometric':
         p = kwargs['params']
-        # 将List[Tuple[int, int]]转换为字典格式
+        # 将List[Tuple[int, int]]格式，转换为字典
         if isinstance(p, list):
             # 如果是List[Tuple[int, int]]格式，转换为字典
             directions = [item[0] for item in p]
@@ -631,13 +666,11 @@ def delay_anti(config, mode, **kwargs):
         point_locs = _direction_to_angle(p['directions'])
         error_types = np.asarray(p['error_types']).astype(int)
 
-        task_signal_dur = int(500/dt)
-        task_signal_off = task_signal_dur
-        point_dur = int(100/dt)
-        point_off = task_signal_off + point_dur
+        task_signal_dur = int(task_times['task_signal_dur']/dt)
+        delay_on = task_signal_dur
         delay_dur = int(1500/dt)
-        go_cue_on = point_off + delay_dur
-        tdim = go_cue_on + int(500/dt)
+        go_cue_on = delay_on + delay_dur
+        tdim = go_cue_on + int(task_times['response_dur']/dt)
 
         batch_size = len(point_locs)
     else:
@@ -653,15 +686,15 @@ def delay_anti(config, mode, **kwargs):
     
     trial = Trial(config, tdim, batch_size)
     
-    # 第一阶段：任务信号（one-hot编码在位置36）
-    trial.add('fix_in', offs=tdim)  # 注视输入直到试验结束
+    # 第一阶段：任务信号（one-hot编码在位置3）
+    trial.add('fix_in', offs=go_cue_on)  # 注视输入直到延迟结束
     trial.add_task_signal(3, on=0, off=go_cue_on)  # Delay Anti-saccade任务信号持续到反应开始
     
-    # 第二阶段：点刺激
-    trial.add('stim', point_locs, ons=task_signal_off, offs=tdim)  # 点刺激持续到试验结束
+    # 第二阶段：点刺激（从delay_on开始）
+    trial.add('stim', point_locs, ons=delay_on, offs=tdim)  # 点刺激从延迟开始持续到试验结束
     
     # 输出
-    trial.add('fix_out', offs=tdim)  # 注视输出直到试验结束
+    trial.add('fix_out', offs=go_cue_on)  # 注视输出直到延迟结束
     if mode == 'psychometric':
         trial.add('out', np.nan_to_num(response_locs, nan=0.0), ons=go_cue_on)
         unknown_mask = np.isin(error_types, [2, 3, 4])
@@ -676,9 +709,8 @@ def delay_anti(config, mode, **kwargs):
     trial.add_c_mask(pre_offs=go_cue_on, post_ons=check_ons, task_type='delay_anti')
     
     trial.epochs = {
-        'task_signal': (None, task_signal_off),
-        'stimulus': (task_signal_off, point_off),
-        'delay': (point_off, go_cue_on),
+        'task_signal': (None, delay_on),
+        'delay': (delay_on, go_cue_on),
         'response': (go_cue_on, None)
     }
     
@@ -707,7 +739,7 @@ def generate_trials(rule, hp, mode, noise_on=True, **kwargs):
     Args:
         rule: str, 这批数据的任务类型
         hp: 超参数字典
-        mode: str, 生成模式。选项: random, test, psychometric
+        mode: str, 生成模式。选项: random, psychometric
         noise_on: bool, 是否添加输入噪声
 
     Return:

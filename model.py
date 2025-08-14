@@ -37,12 +37,6 @@ def popvec(y):
     return np.mod(loc, 2*np.pi)
 
 
-
-
-
-
-
-
 def analyze_error_types(y_hat, y_loc):
     """详细分析错误类型
     
@@ -284,6 +278,20 @@ class LSTMNetwork(nn.Module):
         output = self.activation(output)
         
         return output
+    
+    def get_hidden_activities(self, x):
+        """
+        获取隐藏层活动（用于分析）
+        
+        Args:
+            x: 输入张量 (seq_len, batch_size, n_input)
+        
+        Returns:
+            h_activities: 隐藏层活动 (seq_len, batch_size, n_rnn)
+        """
+        # LSTM前向传播，只返回隐藏层活动
+        lstm_out, (h_n, c_n) = self.lstm(x)
+        return lstm_out
 
 
 class CustomSaccadeModel(nn.Module):
@@ -503,6 +511,18 @@ class CustomSaccadeModel(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """前向传播"""
         return self.network(x)
+    
+    def get_hidden_activities(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        获取隐藏层活动（用于分析）
+        
+        Args:
+            x: 输入张量 (seq_len, batch_size, n_input)
+        
+        Returns:
+            h_activities: 隐藏层活动 (seq_len, batch_size, n_rnn)
+        """
+        return self.network.get_hidden_activities(x)
     
     def compute_loss(self, y_hat: torch.Tensor, y: torch.Tensor, 
                     c_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
