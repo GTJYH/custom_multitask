@@ -20,7 +20,7 @@ sys.path.insert(0, str(project_root))
 
 from task import generate_trials
 from model import CustomSaccadeModel
-from utils.logger import get_logger
+from utils.logger import AnalysisLogger
 from utils.config import HyperParameters
 
 
@@ -35,8 +35,8 @@ class TaskSetAnalysis:
             hp_path: str, 超参数文件路径，如果为None则从model_path同目录查找
         """
         # 设置日志
-        self.logger = get_logger(__name__)
-        self.logger.info("开始初始化任务集分析")
+        self.logger = AnalysisLogger("taskset_analysis")
+        self.logger.log_info("开始初始化任务集分析")
         
         # 加载模型和超参数
         self.model_path = model_path
@@ -45,7 +45,7 @@ class TaskSetAnalysis:
         if hp_path is None:
             hp_path = os.path.join(self.model_dir, 'hp.json')
         
-        self.logger.info(f"加载超参数文件: {hp_path}")
+        self.logger.log_info(f"加载超参数文件: {hp_path}")
         with open(hp_path, 'r') as f:
             model_hp = json.load(f)
         
@@ -57,11 +57,11 @@ class TaskSetAnalysis:
         self.hp = default_hp_dict.copy()
         self.hp.update(model_hp)  # 模型参数覆盖默认值
         
-        self.logger.info(f"模型参数: {model_hp}")
-        self.logger.info(f"完整超参数: {self.hp}")
+        self.logger.log_info(f"模型参数: {model_hp}")
+        self.logger.log_info(f"完整超参数: {self.hp}")
         
         # 加载模型
-        self.logger.info("加载PyTorch模型")
+        self.logger.log_info("加载PyTorch模型")
         
         # 添加随机数生成器到超参数（用于trial生成）
         self.hp['rng'] = np.random.RandomState(self.hp.get('random_seed', 42))
@@ -83,11 +83,11 @@ class TaskSetAnalysis:
         if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
             # 完整检查点格式
             state_dict = checkpoint['model_state_dict']
-            self.logger.info("检测到完整检查点格式，提取model_state_dict")
+            self.logger.log_info("检测到完整检查点格式，提取model_state_dict")
         else:
             # 单独的state_dict格式
             state_dict = checkpoint
-            self.logger.info("检测到单独的state_dict格式")
+            self.logger.log_info("检测到单独的state_dict格式")
         
         # 处理键名映射问题
         new_state_dict = {}
@@ -96,13 +96,13 @@ class TaskSetAnalysis:
             if not key.startswith('network.'):
                 new_key = f'network.{key}'
                 new_state_dict[new_key] = value
-                self.logger.info(f"映射键名: {key} -> {new_key}")
+                self.logger.log_info(f"映射键名: {key} -> {new_key}")
             else:
                 new_state_dict[key] = value
         
         self.model.load_state_dict(new_state_dict)
         self.model.eval()
-        self.logger.info("模型加载完成")
+        self.logger.log_info("模型加载完成")
         
         # 定义四个眼跳任务
         self.tasks = ['pro_saccade', 'anti_saccade', 'delay_pro', 'delay_anti']
@@ -135,15 +135,15 @@ class TaskSetAnalysis:
         available_epochs = set()
         for key in self.h_stimavg_byepoch.keys():
             available_epochs.add(key[1])
-        self.logger.info(f"所有可用的epochs: {sorted(available_epochs)}")
+        self.logger.log_info(f"所有可用的epochs: {sorted(available_epochs)}")
     
     def _compute_stimulus_averaged_activity(self):
         """计算刺激平均活动"""
-        self.logger.info("开始计算刺激平均活动")
+        self.logger.log_info("开始计算刺激平均活动")
         
         with torch.no_grad():
             for task in self.tasks:
-                self.logger.info(f"处理任务: {task}")
+                self.logger.log_info(f"处理任务: {task}")
                 
                 # 生成测试trial
                 trial = generate_trials(task, self.hp, 'random', batch_size=32)
@@ -161,7 +161,7 @@ class TaskSetAnalysis:
                 # 按epoch分组
                 self._process_epochs(task, h_activities, trial)
         
-        self.logger.info("刺激平均活动计算完成")
+        self.logger.log_info("刺激平均活动计算完成")
     
     def _get_hidden_activities(self, x):
         """获取隐藏层活动
@@ -190,7 +190,7 @@ class TaskSetAnalysis:
         """
         # 使用trial对象中已定义的epochs
         epochs = trial.epochs
-        self.logger.info(f"任务 {task} 的epochs: {epochs}")
+        self.logger.log_info(f"任务 {task} 的epochs: {epochs}")
         
         # 计算每个epoch的活动
         h_stimavg = h_activities.mean(axis=1)  # (time, hidden_dim)
@@ -207,9 +207,9 @@ class TaskSetAnalysis:
                 self.h_stimavg_byepoch[(task, epoch_name)] = h_stimavg[start_t:end_t, :]
                 # 存储epoch最后一个时间点的活动
                 self.h_lastt_byepoch[(task, epoch_name)] = h_activities[end_t-1, :, :]
-                self.logger.info(f"存储 {task} {epoch_name}: {start_t}-{end_t}")
+                self.logger.log_info(f"存储 {task} {epoch_name}: {start_t}-{end_t}")
             else:
-                self.logger.warning(f"跳过 {task} {epoch_name}: 时间范围 {start_t}-{end_t} 超出数据范围 {h_stimavg.shape[0]}")
+                self.logger.log_warning(f"跳过 {task} {epoch_name}: 时间范围 {start_t}-{end_t} 超出数据范围 {h_stimavg.shape[0]}")
     
     def filter(self, h, tasks=None, epochs=None, non_tasks=None, non_epochs=None,
                get_lasttimepoint=True, get_timeaverage=False, **kwargs):
@@ -228,9 +228,9 @@ class TaskSetAnalysis:
             h_new: 过滤后的数据字典
         """
         if get_lasttimepoint:
-            self.logger.info('分析epoch的最后一个时间点')
+            self.logger.log_info('分析epoch的最后一个时间点')
         if get_timeaverage:
-            self.logger.info('分析epoch的时间平均活动')
+            self.logger.log_info('分析epoch的时间平均活动')
         
         h_new = OrderedDict()
         for key in h:
@@ -270,43 +270,43 @@ class TaskSetAnalysis:
         Returns:
             h_trans: 降维后的数据字典
         """
-        self.logger.info(f"开始计算任务空间，降维方法: {dim_reduction_type}")
+        self.logger.log_info(f"开始计算任务空间，降维方法: {dim_reduction_type}")
         
         # 只取每个epoch的最后一个时间点
         h = self.filter(self.h_stimavg_byepoch, epochs=epochs, tasks=tasks, 
                        get_lasttimepoint=True, **kwargs)
         
         # 调试信息：显示过滤后的数据
-        self.logger.info(f"过滤后的数据键: {list(h.keys())}")
-        self.logger.info(f"请求的epochs: {epochs}")
-        self.logger.info(f"请求的tasks: {tasks}")
+        self.logger.log_info(f"过滤后的数据键: {list(h.keys())}")
+        self.logger.log_info(f"请求的epochs: {epochs}")
+        self.logger.log_info(f"请求的tasks: {tasks}")
         
         # 连接所有数据
         data = np.concatenate(list(h.values()), axis=0)
         data = data.astype(dtype='float64')
         
-        self.logger.info(f"数据形状: {data.shape}")
+        self.logger.log_info(f"数据形状: {data.shape}")
         
         # 选择降维方法
         if dim_reduction_type == 'PCA':
             model = PCA(n_components=2)
-            self.logger.info("使用PCA降维")
+            self.logger.log_info("使用PCA降维")
         elif dim_reduction_type == 'MDS':
             model = MDS(n_components=2, metric=True, random_state=0)
-            self.logger.info("使用MDS降维")
+            self.logger.log_info("使用MDS降维")
         elif dim_reduction_type == 'TSNE':
             model = TSNE(n_components=2, init='pca', 
                         verbose=1, method='exact', learning_rate=100, perplexity=5)
-            self.logger.info("使用t-SNE降维")
+            self.logger.log_info("使用t-SNE降维")
         elif dim_reduction_type == 'IsoMap':
             model = Isomap(n_components=2)
-            self.logger.info("使用IsoMap降维")
+            self.logger.log_info("使用IsoMap降维")
         else:
             raise ValueError(f'未知的降维方法: {dim_reduction_type}')
         
         # 降维变换
         data_trans = model.fit_transform(data)
-        self.logger.info("降维完成")
+        self.logger.log_info("降维完成")
         
         # 打包回字典
         h_trans = OrderedDict()
@@ -333,7 +333,7 @@ class TaskSetAnalysis:
             plot_label: 是否显示轴标签
             save_path: 保存路径
         """
-        self.logger.info("开始绘制任务空间图")
+        self.logger.log_info("开始绘制任务空间图")
         
         # 形状映射
         shape_mapping = {
@@ -398,7 +398,7 @@ class TaskSetAnalysis:
             save_path = os.path.join(self.model_dir, f'{save_name}.png')
         
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        self.logger.info(f"任务空间图已保存到: {save_path}")
+        self.logger.log_info(f"任务空间图已保存到: {save_path}")
         plt.show()
     
     def compute_and_plot_taskspace(self, tasks=None, epochs=None, **kwargs):
@@ -429,10 +429,10 @@ def analyze_saccade_taskspace(model_path, hp_path=None, epochs=None,
         tsa: TaskSetAnalysis对象
         h_trans: 降维后的数据
     """
-    logger = get_logger(__name__)
-    logger.info(f"开始分析眼跳任务空间")
-    logger.info(f"模型路径: {model_path}")
-    logger.info(f"降维方法: {dim_reduction_type}")
+    logger = AnalysisLogger("taskset_analysis_main")
+    logger.log_info(f"开始分析眼跳任务空间")
+    logger.log_info(f"模型路径: {model_path}")
+    logger.log_info(f"降维方法: {dim_reduction_type}")
     
     # 如果没有指定epochs，使用默认的
     if epochs is None:
@@ -445,7 +445,7 @@ def analyze_saccade_taskspace(model_path, hp_path=None, epochs=None,
     # 创建分析对象
     tsa = TaskSetAnalysis(model_path, hp_path)
     
-    logger.info(f"分析的epochs: {epochs}")
+    logger.log_info(f"分析的epochs: {epochs}")
     
     # 计算并绘制任务空间
     h_trans = tsa.compute_and_plot_taskspace(
@@ -455,7 +455,7 @@ def analyze_saccade_taskspace(model_path, hp_path=None, epochs=None,
         save_path=save_path
     )
     
-    logger.info("眼跳任务空间分析完成")
+    logger.log_info("眼跳任务空间分析完成")
     return tsa, h_trans
 
 

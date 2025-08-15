@@ -201,3 +201,58 @@ class TrainingLogger:
         if new_tasks:
             new_str = ", ".join([f"{k}: {v:.3f}" for k, v in new_tasks.items()])
             self.logger.info(f"  新任务: {new_str}")
+
+
+class AnalysisLogger:
+    """分析模块专用日志记录器"""
+    
+    def __init__(self, name: str = "analysis"):
+        """
+        初始化分析日志记录器
+        
+        Args:
+            name: 日志记录器名称
+        """
+        self.name = name
+        
+        # 设置日志记录器
+        self.logger = setup_logger(
+            name=name,
+            console_output=True,
+            file_output=False
+        )
+        
+        # 记录分析开始
+        self.logger.info(f"分析模块启动: {name}")
+    
+    def log_analysis_start(self, analysis_type: str, model_path: str):
+        """记录分析开始"""
+        self.logger.info(f"=== 开始 {analysis_type} 分析 ===")
+        self.logger.info(f"模型路径: {model_path}")
+    
+    def log_analysis_progress(self, current: int, total: int, description: str = ""):
+        """记录分析进度"""
+        percentage = (current / total) * 100
+        self.logger.info(f"进度: {current}/{total} ({percentage:.1f}%) - {description}")
+    
+    def log_analysis_complete(self, analysis_type: str, results_summary: str = ""):
+        """记录分析完成"""
+        self.logger.info(f"=== {analysis_type} 分析完成 ===")
+        if results_summary:
+            self.logger.info(f"结果摘要: {results_summary}")
+    
+    def log_error(self, error: Exception, context: str = ""):
+        """记录错误信息"""
+        self.logger.error(f"错误 {context}: {str(error)}", exc_info=True)
+    
+    def log_warning(self, message: str):
+        """记录警告信息"""
+        self.logger.warning(message)
+    
+    def log_info(self, message: str):
+        """记录一般信息"""
+        self.logger.info(message)
+    
+    def log_debug(self, message: str):
+        """记录调试信息"""
+        self.logger.debug(message)
