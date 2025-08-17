@@ -1,4 +1,4 @@
-"""训练自定义眼跳任务的PyTorch LSTM模型"""
+"""训练自定义眼跳任务的PyTorch LSTM模型（旧版本，已被弃用）"""
 
 import torch
 import torch.nn as nn
